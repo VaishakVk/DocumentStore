@@ -35,7 +35,7 @@ Pass the file Name and Modified File Name as body parameters
 
 ```
 {
-	"originalFileName": "Filename1",
+  "originalFileName": "Filename1",
   "modifiedFileName": "Filename2"
 }
 ```

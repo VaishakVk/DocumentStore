@@ -26,30 +26,11 @@ function checkFileExists(fileName, cb) {
 	}
 }
 
-// function checkFileLocal (fileName, cb) {
-// 	cb(fs.existsSync(path.join(docsDir, fileName)))
-// }
-
-// function checkFileS3 (fileName, cb) {
-// 	AWS.config.update({accessKeyId: process.env.ACCESS_KEY_ID,
-// 							secretAccessKey: process.env.SECRET_ACCESS_KEY,
-// 							region: 'us-east-2'});
-
-// 	const s3 = new AWS.S3();
-// 	const params = {Bucket: process.env.BUCKET_NAME,
-// 				 	Key: fileName};
-// 	s3.headObject(params, (err, result) => {
-// 		console.log(err, result);
-// 		if(err) cb(false)
-// 		else cb(true)
-// 	})
-// }
-
 exports.postUploadFile = (req, res) => {
 	
 	if (typeof req.query.uploadTo === 'undefined') 
 		req.query.uploadTo = "local";
-
+	
 	if (req.query.uploadTo === "local") {
 		const fileStorage = multer.diskStorage({
 		  	destination: (req, file, cb) => {
@@ -158,3 +139,78 @@ exports.deleteFile = (req, res) => {
 	})
 }
 
+exports.getFile = (req, res) => {
+	
+	fileName = req.query.fileName
+	
+	checkFileExists(fileName, result => {
+		if(result === 'local') {
+			res.download(path.join(docsDir, fileName), (err) => {
+				if(err) {
+					return res.status(401).json({message: "Error while downloading file: " + err })
+				}
+				//return res.status(200).json({message: "File deleted successfully"})
+			})
+			.end()
+
+		} else if (result === "S3") {
+			AWS.config.update({accessKeyId: process.env.ACCESS_KEY_ID,
+							secretAccessKey: process.env.SECRET_ACCESS_KEY,
+							region: 'us-east-2'});
+
+			const s3 = new AWS.S3();
+			const params = {Bucket: process.env.BUCKET_NAME,
+						 	Key: fileName};
+
+			s3.deleteObject(params, function(err, data) {
+				if(err) {
+					return res.status(401).json({message: "Error while deleting file: " + err })
+				}
+				return res.status(200).json({message: "File deleted successfully"})
+			})
+		} else {
+			return res.status(401).json({message: "File Not Found" })
+		}
+	})
+}
+
+exports.patchRenameFile = (req, res) => {
+	originalFileName = req.body.originalFileName
+	modifiedFileName = req.body.modifiedFileName
+	
+	checkFileExists(originalFileName, result => {
+		if(result === 'local') {
+			fs.rename(path.join(docsDir, originalFileName), path.join(docsDir, modifiedFileName), (err) => {
+				if(err) {
+					return res.status(401).json({message: "Error while renaming file: " + err })
+				}
+				return res.status(200).json({message: "File renamed successfully"})
+			})		
+		} else if (result === "S3") {
+			AWS.config.update({accessKeyId: process.env.ACCESS_KEY_ID,
+							secretAccessKey: process.env.SECRET_ACCESS_KEY,
+							region: 'us-east-2'});
+
+			const s3 = new AWS.S3();
+			const params = {Bucket: process.env.BUCKET_NAME,
+							CopySource: process.env.BUCKET_NAME + '/' + originalFileName
+						 	Key: modifiedFileName};
+
+			s3.copyObject(params, function(err, data) {
+				if(err) {
+					return res.status(401).json({message: "Error while renaming file: " + err })
+				}
+				
+				s3.deleteObject({Bucket: process.env.BUCKET_NAME,
+								Key: originalFileName}, function(err, data) {
+					if(err) {
+						return res.status(401).json({message: "Error while renaming file: " + err })
+					}
+					return res.status(200).json({message: "File renamed successfully"})
+				})
+			})
+		} else {
+			return res.status(401).json({message: "File Not Found" })
+		}
+	})
+}

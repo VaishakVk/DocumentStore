@@ -7,8 +7,6 @@ const path = require("path");
 const docsDir = path.join(__dirname, '../', 'docs');
 
 function checkFileExists(fileName, cb) {
-	var err
-	var result
 	existsFile = fs.existsSync(path.join(docsDir, fileName))
 	if(existsFile) {
 		cb('local')
@@ -20,13 +18,10 @@ function checkFileExists(fileName, cb) {
 		const s3 = new AWS.S3();
 		const params = {Bucket: process.env.BUCKET_NAME,
 					 	Key: fileName};
-		err, result = s3.headObject(params)
-		// console.log(err, result)
-		// , (err, result) => {			
-		if(err) cb('File Not Found')
-		else cb('S3')
-		// }
-		// )	
+		s3.headObject(params, (err, result) => {			
+			if(err) cb('File Not Found')
+			else cb('S3')
+		})	
 	}
 }
 
@@ -43,16 +38,10 @@ exports.postUploadFile = (req, res) => {
 		    	cb(null, 'docs');
 		  	},
 		  	filename: (reqMult, file, cb) => {
-		  		fileNameUpload = file.originalname;
-
 		  		checkFileExists(file.originalname, result => {
-		  			// console.log(result)
-					if(result == 'local' || result == 'S3') {
-						fileNameUpload = Date.now() + '.' + fileNameUpload
-					}
-				})
-
-		    	cb(null, fileNameUpload);
+	        		if(result == "S3"||result == "local") cb(null, Date.now() + '.' + file.originalname)
+	        		else cb(null, file.originalname); 
+	        	});
 		  	}
 		});
 		
@@ -76,20 +65,13 @@ exports.postUploadFile = (req, res) => {
 		const fileStorage = multerS3({s3,
 								    bucket: process.env.BUCKET_NAME,
 							        key: function (req, file, cb) {
-							        	fileNameUpload = file.originalname;
-
-								  		checkFileExists(file.originalname, result => {
-								  			// console.log(result)
-											if(result == 'local' || result == 'S3') {
-												fileNameUpload = Date.now() + '.' + fileNameUpload
-											}
-										})
-								    	cb(null, fileNameUpload);
+							        	checkFileExists(file.originalname, result => {
+							        		if(result == "S3"||result == "local") cb(null, Date.now() + '.' + file.originalname)
+							        		else cb(null, file.originalname); 
+							        	});
 							        }
     	})
-
     	const upload = multer({ storage: fileStorage }).single('document');
-
     	upload(req, res, function(err, data) {
 	         if (err) {
 	            return res.status(400).json({message: "Error while uploading file: " + err });

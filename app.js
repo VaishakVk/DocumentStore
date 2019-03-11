@@ -14,6 +14,10 @@ require('dotenv').config();
 
 app.use("/api", documentRoutes);
 
+app.get("/", (req, res, next)=> {
+	res.sendFile('views/home.html', {root: __dirname })
+})
+
 app.listen(process.env.PORT || 3000, (err) => {
 	if(err) {
 		return console.log(err);

@@ -7,6 +7,8 @@ const path = require("path");
 const docsDir = path.join(__dirname, '../', 'docs');
 
 function checkFileExists(fileName, cb) {
+	var err
+	var result
 	existsFile = fs.existsSync(path.join(docsDir, fileName))
 	if(existsFile) {
 		cb('local')
@@ -18,36 +20,51 @@ function checkFileExists(fileName, cb) {
 		const s3 = new AWS.S3();
 		const params = {Bucket: process.env.BUCKET_NAME,
 					 	Key: fileName};
-		s3.headObject(params, (err, result) => {
-			// console.log(err, result);
-			if(err) cb('File Not Found')
-			else cb('S3')
-		})	
+		err, result = s3.headObject(params)
+		// console.log(err, result)
+		// , (err, result) => {			
+		if(err) cb('File Not Found')
+		else cb('S3')
+		// }
+		// )	
 	}
 }
 
 exports.postUploadFile = (req, res) => {
 	
+	// var fileToBeUploaded;
+
 	if (typeof req.query.uploadTo === 'undefined') 
 		req.query.uploadTo = "local";
 	
 	if (req.query.uploadTo === "local") {
 		const fileStorage = multer.diskStorage({
-		  	destination: (req, file, cb) => {
+		  	destination: (reqMult, file, cb) => {
 		    	cb(null, 'docs');
 		  	},
-		  	filename: (req, file, cb) => {
-		    	cb(null, file.originalname);
+		  	filename: (reqMult, file, cb) => {
+		  		fileNameUpload = file.originalname;
+
+		  		checkFileExists(file.originalname, result => {
+		  			// console.log(result)
+					if(result == 'local' || result == 'S3') {
+						fileNameUpload = Date.now() + '.' + fileNameUpload
+					}
+				})
+
+		    	cb(null, fileNameUpload);
 		  	}
 		});
-
-		const upload = multer({ storage: fileStorage }).single('document');
-
+		
+		const upload = multer({ storage: fileStorage })
+				.single('document');
+		// console.log(3)
 		upload(req, res, function(err) {
-	         if (err) {
-	            return res.status(422).json({message: "Error while uploading file: " + err });
-	         }
-	         return res.status(200).json({message: "File uploaded successfully"})
+			// console.log(2)
+	        if (err) {
+	            return res.status(400).json({message: "Error while uploading file: " + err });
+	        }
+	        return res.status(200).json({message: "File uploaded successfully"})
 	     });
 
 	} else if (req.query.uploadTo === "S3") {
@@ -58,19 +75,24 @@ exports.postUploadFile = (req, res) => {
 
 		const fileStorage = multerS3({s3,
 								    bucket: process.env.BUCKET_NAME,
-								    // acl: 'public-read',
 							        key: function (req, file, cb) {
-							            console.log(file);
-							            cb(null, file.originalname); //use Date.now() for unique file keys
-							        }
+							        	fileNameUpload = file.originalname;
 
+								  		checkFileExists(file.originalname, result => {
+								  			// console.log(result)
+											if(result == 'local' || result == 'S3') {
+												fileNameUpload = Date.now() + '.' + fileNameUpload
+											}
+										})
+								    	cb(null, fileNameUpload);
+							        }
     	})
 
     	const upload = multer({ storage: fileStorage }).single('document');
 
     	upload(req, res, function(err, data) {
 	         if (err) {
-	            return res.status(422).json({message: "Error while uploading file: " + err });
+	            return res.status(400).json({message: "Error while uploading file: " + err });
 	         }
 	         return res.status(200).json({message: "File uploaded successfully"})
 	    });
@@ -91,7 +113,7 @@ exports.getAllFiles = (req, res) => {
 	}
 
 	s3.listObjects(params, function (err, data) {
-	  	if(err) res.status(422).json({message: "Error while GET operation: " + err });
+	  	if(err) res.status(400).json({message: "Error while GET operation: " + err });
 	  	
 	  	data.Contents.forEach(fileDetail => {
 	  		fileData.fileNames.push({file: fileDetail.Key, location: 'S3'})
@@ -113,7 +135,7 @@ exports.deleteFile = (req, res) => {
 		if(result === 'local') {
 			fs.unlink(path.join(docsDir, fileName), (err) => {
 				if(err) {
-					return res.status(401).json({message: "Error while deleting file: " + err })
+					return res.status(400).json({message: "Error while deleting file: " + err })
 				}
 				return res.status(200).json({message: "File deleted successfully"})
 			})
@@ -129,12 +151,12 @@ exports.deleteFile = (req, res) => {
 
 			s3.deleteObject(params, function(err, data) {
 				if(err) {
-					return res.status(401).json({message: "Error while deleting file: " + err })
+					return res.status(400).json({message: "Error while deleting file: " + err })
 				}
 				return res.status(200).json({message: "File deleted successfully"})
 			})
 		} else {
-			return res.status(401).json({message: "File Not Found" })
+			return res.status(400).json({message: "File Not Found" })
 		}
 	})
 }
@@ -145,13 +167,12 @@ exports.getFile = (req, res) => {
 	
 	checkFileExists(fileName, result => {
 		if(result === 'local') {
+			console.log(path.join(docsDir, fileName))
 			res.download(path.join(docsDir, fileName), (err) => {
 				if(err) {
-					return res.status(401).json({message: "Error while downloading file: " + err })
+					return res.status(400).json({message: "Error while downloading file: " + err })
 				}
-				//return res.status(200).json({message: "File deleted successfully"})
 			})
-			.end()
 
 		} else if (result === "S3") {
 			AWS.config.update({accessKeyId: process.env.ACCESS_KEY_ID,
@@ -162,19 +183,21 @@ exports.getFile = (req, res) => {
 			const params = {Bucket: process.env.BUCKET_NAME,
 						 	Key: fileName};
 
-			s3.deleteObject(params, function(err, data) {
+			s3.getObject(params, function(err, data) {
 				if(err) {
-					return res.status(401).json({message: "Error while deleting file: " + err })
+					return res.status(400).json({message: "Error while downloading file: " + err })
 				}
-				return res.status(200).json({message: "File deleted successfully"})
+				res.attachment(fileName); // or whatever your logic needs
+       			res.send(data.Body);
+				// return res.status(200).json({message: "File deleted successfully"})
 			})
 		} else {
-			return res.status(401).json({message: "File Not Found" })
+			return res.status(400).json({message: "File Not Found" })
 		}
 	})
 }
 
-exports.patchRenameFile = (req, res) => {
+exports.renameFile = (req, res) => {
 	originalFileName = req.body.originalFileName
 	modifiedFileName = req.body.modifiedFileName
 	
@@ -182,7 +205,7 @@ exports.patchRenameFile = (req, res) => {
 		if(result === 'local') {
 			fs.rename(path.join(docsDir, originalFileName), path.join(docsDir, modifiedFileName), (err) => {
 				if(err) {
-					return res.status(401).json({message: "Error while renaming file: " + err })
+					return res.status(400).json({message: "Error while renaming file: " + err })
 				}
 				return res.status(200).json({message: "File renamed successfully"})
 			})		
@@ -193,24 +216,24 @@ exports.patchRenameFile = (req, res) => {
 
 			const s3 = new AWS.S3();
 			const params = {Bucket: process.env.BUCKET_NAME,
-							CopySource: process.env.BUCKET_NAME + '/' + originalFileName
+							CopySource: process.env.BUCKET_NAME + '/' + originalFileName,
 						 	Key: modifiedFileName};
 
 			s3.copyObject(params, function(err, data) {
 				if(err) {
-					return res.status(401).json({message: "Error while renaming file: " + err })
+					return res.status(400).json({message: "Error while renaming file: " + err })
 				}
 				
 				s3.deleteObject({Bucket: process.env.BUCKET_NAME,
 								Key: originalFileName}, function(err, data) {
 					if(err) {
-						return res.status(401).json({message: "Error while renaming file: " + err })
+						return res.status(400).json({message: "Error while renaming file: " + err })
 					}
 					return res.status(200).json({message: "File renamed successfully"})
 				})
 			})
 		} else {
-			return res.status(401).json({message: "File Not Found" })
+			return res.status(400).json({message: "File Not Found" })
 		}
 	})
 }

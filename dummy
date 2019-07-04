@@ -1,14 +1,42 @@
-{
-    "type":"object",
-    "properties":{
-        "action":{
-            "type":"string",
-            "enum":[
-                "NOW"
-            ]
-        }
-    },
-    "xml":{
-        "name":"schedulejob"
-    }
+
+const Show = require('../models/shows')
+const Op = Sequelize.Op
+
+exports.getShowDetails = (req, res, next) => {
+	const today = new Date()
+	const hr = ('0' + today.getHours()).substr(-2)
+	const min = today.getMinutes()
+	const todayhhmm = hr + min
+	
+	Show.findAll({attributes: ['showTime', 'basePrice'], where: {showTime: {[Op.gt]: todayhhmm}}})
+	.then(data => res.status(200).send(data))
+	.catch(err => res.status(500).send(err))
+}
+
+exports.postRegisterShow = (req, res, next) => {
+	const {showTime, basePrice, seats} = req.body
+	
+	const seatRegex = /R\d*:\[[0-9,]*\]/g
+	const seatLayout = seats.match(seatRegex)
+	const seatArray = []
+	seatLayout.forEach(seat => {
+		let splitdata = seat.split(':')
+		let row = parseInt(splitdata[0].substring(1), 10)
+		let seatRow = JSON.parse(splitdata[1])
+		
+		seatArray[row] = seatRow
+	})
+	
+	Show.create({
+		seats: seatRow,
+		showTime,
+		basePrice
+	}).then(showData => res.status(201).send({message: "Show registered successfully"}))
+	.catch(err => res.status(500).send({error: err}))
+}
+
+exports.getShowStats = (req, res, next) => {
+	Show.findOne({
+    order: [ [ 'show', 'DESC' ]],
+});
 }
